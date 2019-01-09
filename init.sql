@@ -18,7 +18,6 @@ id BIGSERIAL primary key UNIQUE,
 user_id BIGINT NOT NULL UNIQUE,
 username	VARCHAR(64) NOT NULL UNIQUE,
 session	VARCHAR(96) DEFAULT ''
-
 );
 
 CREATE TABLE IF NOT EXISTS topics
@@ -30,7 +29,6 @@ number_of_comments BIGINT NOT NULL,
 number_of_likes BIGINT NOT NULL,
 creator_id BIGINT NOT NULL,
 created	VARCHAR(96) DEFAULT ''
-
 );
 
 CREATE TABLE IF NOT EXISTS topiclike
