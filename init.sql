@@ -1,0 +1,51 @@
+
+
+CREATE TABLE IF NOT EXISTS users
+(
+id BIGSERIAL primary key UNIQUE,
+username	VARCHAR(64) NOT NULL UNIQUE,
+first_name	VARCHAR(96) DEFAULT '',
+last_name	VARCHAR(96) DEFAULT '',
+email	VARCHAR(96) DEFAULT '' UNIQUE,
+date_joined	VARCHAR(96) DEFAULT '',
+password	VARCHAR(96) DEFAULT ''
+);
+
+
+CREATE TABLE IF NOT EXISTS session
+(
+id BIGSERIAL primary key UNIQUE,
+user_id BIGINT NOT NULL UNIQUE,
+username	VARCHAR(64) NOT NULL UNIQUE,
+session	VARCHAR(96) DEFAULT ''
+
+);
+
+CREATE TABLE IF NOT EXISTS topics
+(
+id BIGSERIAL primary key UNIQUE,
+title	VARCHAR(96) DEFAULT '',
+body	TEXT DEFAULT '',
+number_of_comments BIGINT NOT NULL,
+number_of_likes BIGINT NOT NULL,
+creator_id BIGINT NOT NULL,
+created	VARCHAR(96) DEFAULT ''
+
+);
+
+CREATE TABLE IF NOT EXISTS topiclike
+(
+id BIGSERIAL primary key UNIQUE,
+topic_id BIGINT NOT NULL,
+user_id BIGINT NOT NULL,
+created	TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS comments
+(
+id BIGSERIAL primary key UNIQUE,
+topic_id BIGINT NOT NULL,
+creator_id BIGINT NOT NULL,
+created	TIMESTAMP NOT NULL,
+body	TEXT DEFAULT ''
+);

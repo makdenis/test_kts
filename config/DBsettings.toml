@@ -1,0 +1,6 @@
+host = "127.0.0.1"
+port = "5432"
+sslmode = "disable"
+dbname = "kts"
+user = "test_user"
+pass = "qwerty"
