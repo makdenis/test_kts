@@ -11,15 +11,13 @@ import (
 
 func (handle *Handle) TopCreateHandle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	cookie, err := r.Cookie("sessionid")
+	tx, err := handle.Db.Begin()
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
+		log.Println(err)
 	}
-	session := cookie.Value
+	id := r.Context().Value("UserId")
 	Topic := models.Topic{}
-	id := handle.GetUserId(session)
-	Topic.Creator_id = id
+	Topic.Creator_id = id.(int64)
 	if r.FormValue("title") == "" || r.FormValue("body") == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -30,10 +28,19 @@ func (handle *Handle) TopCreateHandle(w http.ResponseWriter, r *http.Request) {
 	Topic.Number_of_likes = 0
 	Topic.Created = time.Now().String()
 	insertTopicQuery := `insert into topics (title, body, number_of_comments, number_of_likes, creator_id, created ) values ($1, $2, $3, $4, $5, $6) returning id;`
-	row := handle.Db.QueryRow(insertTopicQuery, Topic.Title, Topic.Body, Topic.Number_of_comments, Topic.Number_of_likes, Topic.Creator_id, Topic.Created)
+	stmt, err := handle.Db.Prepare(insertTopicQuery)
+	if err != nil {
+		tx.Rollback()
+		log.Println(err)
+		return
+	}
+	defer stmt.Close()
+	row := stmt.QueryRow(Topic.Title, Topic.Body, Topic.Number_of_comments, Topic.Number_of_likes, Topic.Creator_id, Topic.Created)
 	err = row.Scan(&Topic.ID)
 	if err != nil {
+		tx.Rollback()
 		log.Println(err)
+		return
 	}
 	message, err := json.Marshal(Topic)
 	if err != nil {
@@ -43,6 +50,7 @@ func (handle *Handle) TopCreateHandle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 	}
+	tx.Commit()
 }
 
 func (handle *Handle) TopListHandle(w http.ResponseWriter, r *http.Request) {
@@ -89,6 +97,10 @@ func (handle *Handle) TopListHandle(w http.ResponseWriter, r *http.Request) {
 
 func (handle *Handle) TopLikeHandle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	tx, err := handle.Db.Begin()
+	if err != nil {
+		log.Println(err)
+	}
 	TopicIdstr := r.FormValue("topic_id")
 	check := handle.CheckTopic(TopicIdstr)
 	if !check {
@@ -99,14 +111,7 @@ func (handle *Handle) TopLikeHandle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 	}
-	Cookie, err := r.Cookie("sessionid")
-	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-	var user int64
-	session := Cookie.Value
-	user = handle.GetUserId(session)
+	user := r.Context().Value("UserId")
 	query := "SELECT topic_id::integer, user_id::integer,created::timestamp  from topiclike WHERE topic_id = $1 and user_id = $2"
 	like := models.TopicLike{}
 	resultRows, err := handle.Db.Query(query, TopicId, user)
@@ -129,32 +134,60 @@ func (handle *Handle) TopLikeHandle(w http.ResponseWriter, r *http.Request) {
 		delta := time.Now().UTC().Sub(like.Created.UTC()).Minutes()
 		if delta <= interval {
 			deleteQuery := `DELETE from topiclike WHERE topic_id = $1 and user_id = $2;`
-
-			_, err = handle.Db.Exec(deleteQuery, TopicId, user)
+			stmt, err := handle.Db.Prepare(deleteQuery)
+			if err != nil {
+				tx.Rollback()
+				log.Println(err)
+				return
+			}
+			defer stmt.Close()
+			_, err = stmt.Exec(TopicId, user)
 			if err != nil {
 				log.Println(err)
 			}
 			updateTopicQuery := `update topics set number_of_likes=number_of_likes-1 WHERE id = $1;`
-			_, err = handle.Db.Exec(updateTopicQuery, TopicId)
+			stmt, err = handle.Db.Prepare(updateTopicQuery)
+			if err != nil {
+				tx.Rollback()
+				log.Println(err)
+				return
+			}
+			defer stmt.Close()
+			_, err = stmt.Exec(TopicId)
 			if err != nil {
 				log.Println(err)
 			}
+			tx.Commit()
 		} else {
 			handle.SendStatus(w, http.StatusForbidden, "can not remove like")
 			return
 		}
 	} else {
-		insertLikeQuery := `insert into topiclike (topic_id, user_id, created ) values ($1, $2,$3 );`
-		_, err = handle.Db.Exec(insertLikeQuery, TopicId, user, time.Now().UTC())
+		insertLikeQuery := `insert into topiclike (topic_id, user_id, created ) values ($1, $2,$3 ) ON CONFLICT ON CONSTRAINT UNIQLIKE DO NOTHING;`
+		stmt, err := handle.Db.Prepare(insertLikeQuery)
+		if err != nil {
+			tx.Rollback()
+			log.Println(err)
+			return
+		}
+		defer stmt.Close()
+		_, err = stmt.Exec(TopicId, user, time.Now().UTC())
 		if err != nil {
 			log.Println(err)
 		}
 		updateTopicQuery := `update topics set number_of_likes=number_of_likes+1 WHERE id = $1;`
-		_, err = handle.Db.Exec(updateTopicQuery, TopicId)
+		stmt, err = handle.Db.Prepare(updateTopicQuery)
+		if err != nil {
+			tx.Rollback()
+			log.Println(err)
+			return
+		}
+		defer stmt.Close()
+		_, err = stmt.Exec(TopicId)
 		if err != nil {
 			log.Println(err)
 		}
-		topicLike := models.TopicLike{int64(TopicId), user, time.Now().UTC()}
+		topicLike := models.TopicLike{int64(TopicId), user.(int64), time.Now().UTC()}
 		w.WriteHeader(http.StatusOK)
 		message, err := json.Marshal(topicLike)
 		if err != nil {
@@ -164,6 +197,7 @@ func (handle *Handle) TopLikeHandle(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Println(err)
 		}
+		tx.Commit()
 		return
 	}
 }

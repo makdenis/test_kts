@@ -9,19 +9,6 @@ import (
 	"strconv"
 )
 
-func (handle *Handle) GetUserId(session string) int64 {
-	query := "SELECT user_id::integer  from session WHERE LOWER(session) = LOWER($1)"
-	var id int64
-	resultRows, _ := handle.Db.Query(query, session)
-	defer resultRows.Close()
-	for resultRows.Next() {
-		err := resultRows.Scan(&id)
-		if err != nil {
-			log.Println(err)
-		}
-	}
-	return id
-}
 
 func (handle *Handle) CheckTopic(id string) bool {
 	ok := 0

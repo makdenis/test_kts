@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"encoding/json"
-	"fmt"
 	"github.com/google/uuid"
 	"ktsProject/models"
 	"log"
@@ -12,6 +11,10 @@ import (
 
 func (handle *Handle) AuthHandle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+	tx, err := handle.Db.Begin()
+	if err != nil {
+		log.Println(err)
+	}
 	user := models.User{}
 	query := "SELECT id::integer, username::text, password::text,email::text, first_name::text, last_name::text, date_joined::text  from users WHERE LOWER(username) = LOWER($1)"
 	resultRows, _ := handle.Db.Query(query, r.FormValue("username"))
@@ -19,7 +22,7 @@ func (handle *Handle) AuthHandle(w http.ResponseWriter, r *http.Request) {
 	for resultRows.Next() {
 		err := resultRows.Scan(&user.ID, &user.Username, &user.Password, &user.Email, &user.First_name, &user.Last_name, &user.Date_joined)
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 		}
 	}
 	if user.Username == "" {
@@ -32,9 +35,17 @@ func (handle *Handle) AuthHandle(w http.ResponseWriter, r *http.Request) {
 	}
 	session := uuid.New().String()
 	insertUserQuery := `insert into session (user_id, username, session) values ($1, $2, $3);`
-	_, err := handle.Db.Exec(insertUserQuery, user.ID, user.Username, session)
+	stmt, err := handle.Db.Prepare(insertUserQuery)
 	if err != nil {
+		tx.Rollback()
 		log.Println(err)
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(user.ID, user.Username, session)
+	if err != nil {
+		tx.Rollback()
+		log.Println(err)
+		return
 	}
 	cookie := &http.Cookie{
 		Name:     "sessionid",
@@ -48,20 +59,33 @@ func (handle *Handle) AuthHandle(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Println(err)
 	}
+	tx.Commit()
 	w.Write(message)
 }
 
 func (handle *Handle) LogoutHandle(w http.ResponseWriter, r *http.Request) {
+	tx, err := handle.Db.Begin()
+	if err != nil {
+		log.Println(err)
+	}
 	session, err := r.Cookie("sessionid")
 	if err != nil {
 		log.Println(err)
 	}
 	id := session.Value
 	deleteQuery := `DELETE from session WHERE LOWER(session) = LOWER($1);`
-
-	_, err = handle.Db.Exec(deleteQuery, id)
+	stmt, err := handle.Db.Prepare(deleteQuery)
 	if err != nil {
+		tx.Rollback()
 		log.Println(err)
+		return
+	}
+	defer stmt.Close()
+	_, err = stmt.Exec(deleteQuery, id)
+	if err != nil {
+		tx.Rollback()
+		log.Println(err)
+		return
 	}
 	cookie := &http.Cookie{
 		Name:     "sessionid",
@@ -71,4 +95,5 @@ func (handle *Handle) LogoutHandle(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 	}
 	http.SetCookie(w, cookie)
+	tx.Commit()
 }

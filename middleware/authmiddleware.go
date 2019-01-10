@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"ktsProject/models"
@@ -18,12 +19,11 @@ func AuthMiddleware(next http.Handler, db *sql.DB) http.Handler {
 		}
 		id := session.Value
 		ses := models.Session{}
-		query := "SELECT session::text, username::text from session WHERE LOWER(session) = LOWER($1)"
-
+		query := "SELECT session::text, username::text, user_id::integer from session WHERE LOWER(session) = LOWER($1)"
 		resultRows, _ := db.Query(query, id)
 		defer resultRows.Close()
 		for resultRows.Next() {
-			err := resultRows.Scan(&ses.Session, &ses.Username)
+			err := resultRows.Scan(&ses.Session, &ses.Username, &ses.User_id)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -32,6 +32,8 @@ func AuthMiddleware(next http.Handler, db *sql.DB) http.Handler {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+		c := context.Background()
+		ctx := context.WithValue(c, "UserId", ses.User_id)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
